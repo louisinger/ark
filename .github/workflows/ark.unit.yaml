@@ -2,10 +2,17 @@ name: ci_unit
 
 on:
   push:
-    branches: ["*"]
+    branches:
+      - master
+    paths:
+      - 'server/**'
+      - 'pkg/client-sdk/**'
   pull_request:
     branches:
-      - "*"
+      - master
+    paths:
+      - 'server/**'
+      - 'pkg/client-sdk/**'
 
 jobs:
   check-go-sync:
