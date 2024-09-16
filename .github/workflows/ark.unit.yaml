@@ -2,10 +2,10 @@ name: ci_unit
 
 on:
   push:
-    branches: [*]
+    branches: ["*"]
   pull_request:
     branches:
-      - *
+      - "*"
 
 jobs:
   check-go-sync:
