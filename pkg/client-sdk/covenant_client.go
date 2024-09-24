@@ -38,6 +38,10 @@ func NewLiquidReceiver(to string, amount uint64) Receiver {
 	return liquidReceiver{to, amount}
 }
 
+func (r liquidReceiver) PreimageHash() string {
+	return ""
+}
+
 func (r liquidReceiver) To() string {
 	return r.to
 }
@@ -318,7 +322,9 @@ func (a *covenantArkClient) SendOnChain(
 
 func (a *covenantArkClient) SendOffChain(
 	ctx context.Context,
-	withExpiryCoinselect bool, receivers []Receiver,
+	withExpiryCoinselect bool,
+	receivers []Receiver,
+	opts Options,
 ) (string, error) {
 	for _, receiver := range receivers {
 		if receiver.IsOnchain() {
@@ -326,7 +332,7 @@ func (a *covenantArkClient) SendOffChain(
 		}
 	}
 
-	return a.sendOffchain(ctx, withExpiryCoinselect, receivers)
+	return a.sendOffchain(ctx, withExpiryCoinselect, receivers, opts)
 }
 
 func (a *covenantArkClient) UnilateralRedeem(ctx context.Context) error {
@@ -399,7 +405,10 @@ func (a *covenantArkClient) UnilateralRedeem(ctx context.Context) error {
 
 func (a *covenantArkClient) CollaborativeRedeem(
 	ctx context.Context,
-	addr string, amount uint64, withExpiryCoinselect bool,
+	addr string,
+	amount uint64,
+	withExpiryCoinselect bool,
+	opts Options,
 ) (string, error) {
 	if a.wallet.IsLocked() {
 		return "", fmt.Errorf("wallet is locked")
@@ -444,8 +453,21 @@ func (a *covenantArkClient) CollaborativeRedeem(
 		vtxos = append(vtxos, spendableVtxos...)
 	}
 
+	filteredVtxos := make([]client.Vtxo, 0)
+	if len(opts.FilterOutpoints) == 0 {
+		filteredVtxos = vtxos
+	}
+
+	for _, outpoint := range opts.FilterOutpoints {
+		for _, vtxo := range vtxos {
+			if vtxo.Txid == outpoint.Txid && vtxo.VOut == outpoint.VOut {
+				filteredVtxos = append(filteredVtxos, vtxo)
+			}
+		}
+	}
+
 	selectedCoins, changeAmount, err := utils.CoinSelect(
-		vtxos, amount, a.Dust, withExpiryCoinselect,
+		filteredVtxos, amount, a.Dust, withExpiryCoinselect,
 	)
 	if err != nil {
 		return "", err
@@ -500,13 +522,15 @@ func (a *covenantArkClient) CollaborativeRedeem(
 }
 
 func (a *covenantArkClient) SendAsync(
-	ctx context.Context,
-	withExpiryCoinselect bool, receivers []Receiver,
+	_ context.Context,
+	_ bool,
+	_ []Receiver,
+	_ Options,
 ) (string, error) {
 	return "", fmt.Errorf("not implemented")
 }
 
-func (a *covenantArkClient) Claim(ctx context.Context) (string, error) {
+func (a *covenantArkClient) Claim(ctx context.Context, opts Options) (string, error) {
 	myselfOffchain, _, err := a.wallet.NewAddress(ctx, false)
 	if err != nil {
 		return "", err
@@ -520,6 +544,24 @@ func (a *covenantArkClient) Claim(ctx context.Context) (string, error) {
 	boardingUtxos, err := a.getClaimableBoardingUtxos(ctx)
 	if err != nil {
 		return "", err
+	}
+
+	filteredUtxos := make([]explorer.Utxo, 0)
+
+	if len(opts.FilterOutpoints) == 0 {
+		filteredUtxos = boardingUtxos
+	}
+
+	for _, outpoint := range opts.FilterOutpoints {
+		for _, utxo := range boardingUtxos {
+			if utxo.Txid == outpoint.Txid && utxo.Vout == outpoint.VOut {
+				filteredUtxos = append(filteredUtxos, utxo)
+			}
+		}
+	}
+
+	if len(filteredUtxos) == 0 {
+		return "", fmt.Errorf("no funds to claim")
 	}
 
 	var pendingBalance uint64
@@ -542,7 +584,7 @@ func (a *covenantArkClient) Claim(ctx context.Context) (string, error) {
 
 	return a.selfTransferAllPendingPayments(
 		ctx,
-		boardingUtxos,
+		filteredUtxos,
 		receiver,
 		hex.EncodeToString(mypubkey.SerializeCompressed()),
 	)
@@ -804,7 +846,10 @@ func (a *covenantArkClient) sendOnchain(
 }
 
 func (a *covenantArkClient) sendOffchain(
-	ctx context.Context, withExpiryCoinselect bool, receivers []Receiver,
+	ctx context.Context,
+	withExpiryCoinselect bool,
+	receivers []Receiver,
+	opts Options,
 ) (string, error) {
 	if a.wallet.IsLocked() {
 		return "", fmt.Errorf("wallet is locked")
@@ -863,8 +908,21 @@ func (a *covenantArkClient) sendOffchain(
 		vtxos = append(vtxos, spendableVtxos...)
 	}
 
+	filteredVtxos := make([]client.Vtxo, 0)
+	if len(opts.FilterOutpoints) == 0 {
+		filteredVtxos = vtxos
+	}
+
+	for _, outpoint := range opts.FilterOutpoints {
+		for _, vtxo := range vtxos {
+			if vtxo.Txid == outpoint.Txid && vtxo.VOut == outpoint.VOut {
+				filteredVtxos = append(filteredVtxos, vtxo)
+			}
+		}
+	}
+
 	selectedCoins, changeAmount, err := utils.CoinSelect(
-		vtxos, sumOfReceivers, a.Dust, withExpiryCoinselect,
+		filteredVtxos, sumOfReceivers, a.Dust, withExpiryCoinselect,
 	)
 	if err != nil {
 		return "", err

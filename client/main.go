@@ -7,13 +7,16 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"syscall"
 
 	"github.com/ark-network/ark/common"
 	arksdk "github.com/ark-network/ark/pkg/client-sdk"
+	"github.com/ark-network/ark/pkg/client-sdk/client"
 	"github.com/ark-network/ark/pkg/client-sdk/store"
 	filestore "github.com/ark-network/ark/pkg/client-sdk/store/file"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/term"
 )
@@ -42,6 +45,7 @@ func main() {
 		&sendCommand,
 		&balanceCommand,
 		&redeemCommand,
+		&listVtxosCommand,
 	)
 	app.Flags = []cli.Flag{
 		datadirFlag,
@@ -126,6 +130,16 @@ var (
 		Name:  "force",
 		Usage: "force redemption without collaboration",
 	}
+	outpointsFlag = &cli.StringSliceFlag{
+		Name:     "outpoints",
+		Usage:    "restrict coin selection to these outpoints",
+		Required: false,
+	}
+	preimageFlag = &cli.StringFlag{
+		Name:     "preimage",
+		Usage:    "preimage secret locking vHTLC",
+		Required: false,
+	}
 )
 
 var (
@@ -165,7 +179,7 @@ var (
 		Action: func(ctx *cli.Context) error {
 			return claim(ctx)
 		},
-		Flags: []cli.Flag{passwordFlag},
+		Flags: []cli.Flag{passwordFlag, outpointsFlag, preimageFlag},
 	}
 	balanceCommand = cli.Command{
 		Name:  "balance",
@@ -181,7 +195,7 @@ var (
 		Action: func(ctx *cli.Context) error {
 			return send(ctx)
 		},
-		Flags: []cli.Flag{receiversFlag, toFlag, amountFlag, enableExpiryCoinselectFlag, passwordFlag},
+		Flags: []cli.Flag{receiversFlag, toFlag, amountFlag, enableExpiryCoinselectFlag, passwordFlag, preimageFlag},
 	}
 	redeemCommand = cli.Command{
 		Name:  "redeem",
@@ -189,6 +203,20 @@ var (
 		Flags: []cli.Flag{addressFlag, amountToRedeemFlag, forceFlag, passwordFlag},
 		Action: func(ctx *cli.Context) error {
 			return redeem(ctx)
+		},
+	}
+
+	listVtxosCommand = cli.Command{
+		Name:  "vtxos",
+		Usage: "List spendable VTXOs",
+		Action: func(ctx *cli.Context) error {
+			spendable, _, err := arkSdkClient.ListVtxos(ctx.Context)
+			if err != nil {
+				return err
+			}
+			return printJSON(map[string]interface{}{
+				"spendable": spendable,
+			})
 		},
 	}
 )
@@ -277,7 +305,23 @@ func claim(ctx *cli.Context) error {
 		return err
 	}
 
-	txID, err := arkSdkClient.Claim(ctx.Context)
+	outpointsStrings := ctx.StringSlice(outpointsFlag.Name)
+	outpoints := parseOutpointsSlice(outpointsStrings)
+
+	options := arksdk.Options{
+		FilterOutpoints: outpoints,
+	}
+
+	if len(options.FilterOutpoints) == 1 {
+		preimage := ctx.String(preimageFlag.Name)
+		if len(preimage) > 0 {
+			options.HtlcPreimages = map[client.Outpoint]string{
+				options.FilterOutpoints[0]: preimage,
+			}
+		}
+	}
+
+	txID, err := arkSdkClient.Claim(ctx.Context, options)
 	if err != nil {
 		return err
 	}
@@ -314,7 +358,18 @@ func send(ctx *cli.Context) error {
 		}
 	} else {
 		if isBitcoin {
-			receivers = []arksdk.Receiver{arksdk.NewBitcoinReceiver(to, amount)}
+			var preimageHash string
+			preimage := ctx.String(preimageFlag.Name)
+			if len(preimage) > 0 {
+				preimageBytes, err := hex.DecodeString(preimage)
+				if err != nil {
+					return err
+				}
+
+				preimageHash = hex.EncodeToString(btcutil.Hash160(preimageBytes))
+			}
+
+			receivers = []arksdk.Receiver{arksdk.NewBitcoinReceiver(to, amount, preimageHash)}
 		} else {
 			receivers = []arksdk.Receiver{arksdk.NewLiquidReceiver(to, amount)}
 		}
@@ -365,7 +420,7 @@ func redeem(ctx *cli.Context) error {
 	}
 
 	txID, err := arkSdkClient.CollaborativeRedeem(
-		ctx.Context, address, amount, computeExpiration,
+		ctx.Context, address, amount, computeExpiration, arksdk.Options{},
 	)
 	if err != nil {
 		return err
@@ -443,7 +498,7 @@ func parseReceivers(receveirsJSON string, isBitcoin bool) ([]arksdk.Receiver, er
 	if isBitcoin {
 		for _, v := range list {
 			receivers = append(receivers, arksdk.NewBitcoinReceiver(
-				v["to"].(string), uint64(v["amount"].(float64)),
+				v["to"].(string), uint64(v["amount"].(float64)), "",
 			))
 		}
 		return receivers, nil
@@ -460,7 +515,7 @@ func parseReceivers(receveirsJSON string, isBitcoin bool) ([]arksdk.Receiver, er
 func sendCovenantLess(ctx *cli.Context, receivers []arksdk.Receiver) error {
 	computeExpiration := ctx.Bool(enableExpiryCoinselectFlag.Name)
 	txID, err := arkSdkClient.SendAsync(
-		ctx.Context, computeExpiration, receivers,
+		ctx.Context, computeExpiration, receivers, arksdk.Options{},
 	)
 	if err != nil {
 		return err
@@ -488,7 +543,7 @@ func sendCovenant(ctx context.Context, receivers []arksdk.Receiver) error {
 	}
 
 	if len(offchainReceivers) > 0 {
-		txID, err := arkSdkClient.SendOffChain(ctx, false, offchainReceivers)
+		txID, err := arkSdkClient.SendOffChain(ctx, false, offchainReceivers, arksdk.Options{})
 		if err != nil {
 			return err
 		}
@@ -519,4 +574,29 @@ func printJSON(resp interface{}) error {
 	}
 	fmt.Println(string(jsonBytes))
 	return nil
+}
+
+func parseOutpointsSlice(outpoints []string) []client.Outpoint {
+	result := make([]client.Outpoint, 0, len(outpoints))
+
+	for _, outpoint := range outpoints {
+		parts := strings.Split(outpoint, ":")
+		if len(parts) != 2 {
+			fmt.Printf("invalid outpoint format: %s\n", outpoint)
+			continue
+		}
+
+		vout, err := strconv.Atoi(parts[1])
+		if err != nil {
+			fmt.Printf("invalid vout: %s\n", parts[1])
+			continue
+		}
+
+		result = append(result, client.Outpoint{
+			Txid: parts[0],
+			VOut: uint32(vout),
+		})
+	}
+
+	return result
 }

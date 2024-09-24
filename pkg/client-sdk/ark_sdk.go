@@ -7,6 +7,11 @@ import (
 	"github.com/ark-network/ark/pkg/client-sdk/store"
 )
 
+type Options struct {
+	FilterOutpoints []client.Outpoint
+	HtlcPreimages   map[client.Outpoint]string // vHTLC outpoint -> preimage
+}
+
 type ArkClient interface {
 	GetConfigData(ctx context.Context) (*store.StoreData, error)
 	Init(ctx context.Context, args InitArgs) error
@@ -18,14 +23,21 @@ type ArkClient interface {
 	Receive(ctx context.Context) (offchainAddr, boardingAddr string, err error)
 	SendOnChain(ctx context.Context, receivers []Receiver) (string, error)
 	SendOffChain(
-		ctx context.Context, withExpiryCoinselect bool, receivers []Receiver,
+		ctx context.Context,
+		withExpiryCoinselect bool,
+		receivers []Receiver,
+		opts Options,
 	) (string, error)
 	UnilateralRedeem(ctx context.Context) error
 	CollaborativeRedeem(
-		ctx context.Context, addr string, amount uint64, withExpiryCoinselect bool,
+		ctx context.Context,
+		addr string,
+		amount uint64,
+		withExpiryCoinselect bool,
+		opts Options,
 	) (string, error)
-	SendAsync(ctx context.Context, withExpiryCoinselect bool, receivers []Receiver) (string, error)
-	Claim(ctx context.Context) (string, error)
+	SendAsync(ctx context.Context, withExpiryCoinselect bool, receivers []Receiver, opts Options) (string, error)
+	Claim(ctx context.Context, opts Options) (string, error)
 	ListVtxos(ctx context.Context) (spendable, spent []client.Vtxo, err error)
 	GetTransactionHistory(ctx context.Context) ([]Transaction, error)
 	Dump(ctx context.Context) (seed string, err error)
@@ -34,6 +46,7 @@ type ArkClient interface {
 type Receiver interface {
 	To() string
 	Amount() uint64
+	PreimageHash() string
 
 	IsOnchain() bool
 }

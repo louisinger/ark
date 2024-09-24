@@ -176,10 +176,10 @@ func TestReactToSpentVtxosRedemption(t *testing.T) {
 
 	time.Sleep(5 * time.Second)
 
-	_, err = client.Claim(ctx)
+	_, err = client.Claim(ctx, arksdk.Options{})
 	require.NoError(t, err)
 
-	_, err = client.SendOffChain(ctx, false, []arksdk.Receiver{arksdk.NewBitcoinReceiver(offchainAddress, 1000)})
+	_, err = client.SendOffChain(ctx, false, []arksdk.Receiver{arksdk.NewBitcoinReceiver(offchainAddress, 1000, "")}, arksdk.Options{})
 	require.NoError(t, err)
 
 	time.Sleep(2 * time.Second)
@@ -229,16 +229,16 @@ func TestReactToAsyncSpentVtxosRedemption(t *testing.T) {
 
 		time.Sleep(5 * time.Second)
 
-		roundId, err := sdkClient.Claim(ctx)
+		roundId, err := sdkClient.Claim(ctx, arksdk.Options{})
 		require.NoError(t, err)
 
 		err = utils.GenerateBlock()
 		require.NoError(t, err)
 
-		_, err = sdkClient.SendAsync(ctx, false, []arksdk.Receiver{arksdk.NewBitcoinReceiver(offchainAddress, 1000)})
+		_, err = sdkClient.SendAsync(ctx, false, []arksdk.Receiver{arksdk.NewBitcoinReceiver(offchainAddress, 1000, "")}, arksdk.Options{})
 		require.NoError(t, err)
 
-		_, err = sdkClient.Claim(ctx)
+		_, err = sdkClient.Claim(ctx, arksdk.Options{})
 		require.NoError(t, err)
 
 		time.Sleep(5 * time.Second)
@@ -299,13 +299,13 @@ func TestAliceSeveralPaymentsToBob(t *testing.T) {
 
 	time.Sleep(5 * time.Second)
 
-	_, err = alice.Claim(ctx)
+	_, err = alice.Claim(ctx, arksdk.Options{})
 	require.NoError(t, err)
 
 	bobAddress, _, err := bob.Receive(ctx)
 	require.NoError(t, err)
 
-	_, err = alice.SendOffChain(ctx, false, []arksdk.Receiver{arksdk.NewBitcoinReceiver(bobAddress, 1000)})
+	_, err = alice.SendOffChain(ctx, false, []arksdk.Receiver{arksdk.NewBitcoinReceiver(bobAddress, 1000, "")}, arksdk.Options{})
 	require.NoError(t, err)
 
 	time.Sleep(2 * time.Second)
@@ -314,13 +314,13 @@ func TestAliceSeveralPaymentsToBob(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, bobVtxos, 1)
 
-	_, err = bob.Claim(ctx)
+	_, err = bob.Claim(ctx, arksdk.Options{})
 	require.NoError(t, err)
 
-	_, err = alice.Claim(ctx)
+	_, err = alice.Claim(ctx, arksdk.Options{})
 	require.NoError(t, err)
 
-	_, err = alice.SendOffChain(ctx, false, []arksdk.Receiver{arksdk.NewBitcoinReceiver(bobAddress, 10000)})
+	_, err = alice.SendOffChain(ctx, false, []arksdk.Receiver{arksdk.NewBitcoinReceiver(bobAddress, 10000, "")}, arksdk.Options{})
 	require.NoError(t, err)
 
 	time.Sleep(2 * time.Second)
@@ -329,7 +329,7 @@ func TestAliceSeveralPaymentsToBob(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, bobVtxos, 2)
 
-	_, err = alice.SendOffChain(ctx, false, []arksdk.Receiver{arksdk.NewBitcoinReceiver(bobAddress, 10000)})
+	_, err = alice.SendOffChain(ctx, false, []arksdk.Receiver{arksdk.NewBitcoinReceiver(bobAddress, 10000, "")}, arksdk.Options{})
 	require.NoError(t, err)
 
 	time.Sleep(2 * time.Second)
@@ -338,7 +338,7 @@ func TestAliceSeveralPaymentsToBob(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, bobVtxos, 3)
 
-	_, err = alice.SendAsync(ctx, false, []arksdk.Receiver{arksdk.NewBitcoinReceiver(bobAddress, 10000)})
+	_, err = alice.SendAsync(ctx, false, []arksdk.Receiver{arksdk.NewBitcoinReceiver(bobAddress, 10000, "")}, arksdk.Options{})
 	require.NoError(t, err)
 
 	time.Sleep(2 * time.Second)
@@ -347,7 +347,7 @@ func TestAliceSeveralPaymentsToBob(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, bobVtxos, 4)
 
-	_, err = alice.Claim(ctx)
+	_, err = alice.Claim(ctx, arksdk.Options{})
 	require.NoError(t, err)
 
 	// bobVtxos should be unique
@@ -357,7 +357,7 @@ func TestAliceSeveralPaymentsToBob(t *testing.T) {
 	}
 	require.Len(t, uniqueVtxos, 4)
 
-	_, err = bob.Claim(ctx)
+	_, err = bob.Claim(ctx, arksdk.Options{})
 	require.NoError(t, err)
 
 }

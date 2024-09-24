@@ -61,7 +61,7 @@ func main() {
 	log.Infof("alice offchain balance: %d", aliceBalance.OffchainBalance.Total)
 
 	log.Infof("alice claiming onboarding funds...")
-	txid, err := aliceArkClient.Claim(ctx)
+	txid, err := aliceArkClient.Claim(ctx, arksdk.Options{})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -96,13 +96,13 @@ func main() {
 
 	amount := uint64(1000)
 	receivers := []arksdk.Receiver{
-		arksdk.NewBitcoinReceiver(bobOffchainAddr, amount),
+		arksdk.NewBitcoinReceiver(bobOffchainAddr, amount, ""),
 	}
 
 	fmt.Println("")
 	log.Infof("alice is sending %d sats to bob offchain...", amount)
 
-	if _, err = aliceArkClient.SendAsync(ctx, false, receivers); err != nil {
+	if _, err = aliceArkClient.SendAsync(ctx, false, receivers, arksdk.Options{}); err != nil {
 		log.Fatal(err)
 	}
 
@@ -133,7 +133,7 @@ func main() {
 
 	fmt.Println("")
 	log.Info("bob is claiming the incoming payment...")
-	roundTxid, err := bobArkClient.Claim(ctx)
+	roundTxid, err := bobArkClient.Claim(ctx, arksdk.Options{})
 	if err != nil {
 		log.Fatal(err)
 	}

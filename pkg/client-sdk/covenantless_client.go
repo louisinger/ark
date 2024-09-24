@@ -32,12 +32,17 @@ import (
 )
 
 type bitcoinReceiver struct {
-	to     string
-	amount uint64
+	to           string
+	amount       uint64
+	preimageHash string
 }
 
-func NewBitcoinReceiver(to string, amount uint64) Receiver {
-	return bitcoinReceiver{to, amount}
+func NewBitcoinReceiver(to string, amount uint64, preimageHash string) Receiver {
+	return bitcoinReceiver{to, amount, preimageHash}
+}
+
+func (r bitcoinReceiver) PreimageHash() string {
+	return r.preimageHash
 }
 
 func (r bitcoinReceiver) To() string {
@@ -367,7 +372,9 @@ func (a *covenantlessArkClient) SendOnChain(
 
 func (a *covenantlessArkClient) SendOffChain(
 	ctx context.Context,
-	withExpiryCoinselect bool, receivers []Receiver,
+	withExpiryCoinselect bool,
+	receivers []Receiver,
+	opts Options,
 ) (string, error) {
 	for _, receiver := range receivers {
 		if receiver.IsOnchain() {
@@ -375,7 +382,7 @@ func (a *covenantlessArkClient) SendOffChain(
 		}
 	}
 
-	return a.sendOffchain(ctx, withExpiryCoinselect, receivers)
+	return a.sendOffchain(ctx, withExpiryCoinselect, receivers, opts)
 }
 
 func (a *covenantlessArkClient) UnilateralRedeem(ctx context.Context) error {
@@ -448,7 +455,10 @@ func (a *covenantlessArkClient) UnilateralRedeem(ctx context.Context) error {
 
 func (a *covenantlessArkClient) CollaborativeRedeem(
 	ctx context.Context,
-	addr string, amount uint64, withExpiryCoinselect bool,
+	addr string,
+	amount uint64,
+	withExpiryCoinselect bool,
+	opts Options,
 ) (string, error) {
 	if a.wallet.IsLocked() {
 		return "", fmt.Errorf("wallet is locked")
@@ -480,8 +490,35 @@ func (a *covenantlessArkClient) CollaborativeRedeem(
 		vtxos = append(vtxos, spendableVtxos...)
 	}
 
+	filteredVtxos := make([]client.Vtxo, 0)
+
+	for _, vtxo := range vtxos {
+		vtxoScript, err := bitcointree.ParseVtxoScript(vtxo.Descriptor)
+		if err != nil {
+			return "", err
+		}
+
+		if _, ok := vtxoScript.(*bitcointree.HTLCVtxoScript); ok {
+			if _, ok := opts.HtlcPreimages[vtxo.Outpoint]; !ok {
+				continue
+			}
+		}
+
+		if len(opts.FilterOutpoints) == 0 {
+			filteredVtxos = append(filteredVtxos, vtxo)
+			continue
+		}
+
+		for _, outpoint := range opts.FilterOutpoints {
+			if vtxo.Txid == outpoint.Txid && vtxo.VOut == outpoint.VOut {
+				filteredVtxos = append(filteredVtxos, vtxo)
+				break
+			}
+		}
+	}
+
 	selectedCoins, changeAmount, err := utils.CoinSelect(
-		vtxos, amount, a.Dust, withExpiryCoinselect,
+		filteredVtxos, amount, a.Dust, withExpiryCoinselect,
 	)
 	if err != nil {
 		return "", err
@@ -535,7 +572,14 @@ func (a *covenantlessArkClient) CollaborativeRedeem(
 	}
 
 	poolTxID, err := a.handleRoundStream(
-		ctx, paymentID, selectedCoins, nil, "", receivers, roundEphemeralKey,
+		ctx,
+		paymentID,
+		selectedCoins,
+		nil,
+		"",
+		receivers,
+		roundEphemeralKey,
+		opts.HtlcPreimages,
 	)
 	if err != nil {
 		return "", err
@@ -546,7 +590,9 @@ func (a *covenantlessArkClient) CollaborativeRedeem(
 
 func (a *covenantlessArkClient) SendAsync(
 	ctx context.Context,
-	withExpiryCoinselect bool, receivers []Receiver,
+	withExpiryCoinselect bool,
+	receivers []Receiver,
+	opts Options,
 ) (string, error) {
 	if len(receivers) <= 0 {
 		return "", fmt.Errorf("missing receivers")
@@ -596,17 +642,28 @@ func (a *covenantlessArkClient) SendAsync(
 
 		var desc string
 
-		// reversible vtxo does not make sense for self transfer
-		// if the receiver is the same as the sender, handle the output like the change
-		if !isSelfTransfer {
-			desc, err = a.offchainAddressToReversibleVtxoDescriptor(offchainAddrs[0], receiver.To())
+		if len(receiver.PreimageHash()) > 0 {
+			desc, err = a.offchainAddressToHTLCVtxoDescriptor(
+				offchainAddrs[0], receiver.To(), receiver.PreimageHash(),
+			)
 			if err != nil {
 				return "", err
 			}
-		} else {
-			desc, err = a.offchainAddressToDefaultVtxoDescriptor(receiver.To())
-			if err != nil {
-				return "", err
+		}
+
+		// reversible vtxo does not make sense for self transfer
+		// if the receiver is the same as the sender, handle the output like the change
+		if len(desc) == 0 {
+			if !isSelfTransfer {
+				desc, err = a.offchainAddressToReversibleVtxoDescriptor(offchainAddrs[0], receiver.To())
+				if err != nil {
+					return "", err
+				}
+			} else {
+				desc, err = a.offchainAddressToDefaultVtxoDescriptor(receiver.To())
+				if err != nil {
+					return "", err
+				}
 			}
 		}
 
@@ -621,8 +678,36 @@ func (a *covenantlessArkClient) SendAsync(
 	if err != nil {
 		return "", err
 	}
+
+	filteredVtxos := make([]client.Vtxo, 0)
+
+	for _, vtxo := range vtxos {
+		vtxoScript, err := bitcointree.ParseVtxoScript(vtxo.Descriptor)
+		if err != nil {
+			return "", err
+		}
+
+		if _, ok := vtxoScript.(*bitcointree.HTLCVtxoScript); ok {
+			if _, ok := opts.HtlcPreimages[vtxo.Outpoint]; !ok {
+				continue
+			}
+		}
+
+		if len(opts.FilterOutpoints) == 0 {
+			filteredVtxos = append(filteredVtxos, vtxo)
+			continue
+		}
+
+		for _, outpoint := range opts.FilterOutpoints {
+			if vtxo.Txid == outpoint.Txid && vtxo.VOut == outpoint.VOut {
+				filteredVtxos = append(filteredVtxos, vtxo)
+				break
+			}
+		}
+	}
+
 	selectedCoins, changeAmount, err := utils.CoinSelect(
-		vtxos, sumOfReceivers, a.Dust, withExpiryCoinselect,
+		filteredVtxos, sumOfReceivers, a.Dust, withExpiryCoinselect,
 	)
 	if err != nil {
 		return "", err
@@ -675,7 +760,7 @@ func (a *covenantlessArkClient) SendAsync(
 	return signedRedeemTx, nil
 }
 
-func (a *covenantlessArkClient) Claim(ctx context.Context) (string, error) {
+func (a *covenantlessArkClient) Claim(ctx context.Context, opts Options) (string, error) {
 	myselfOffchain, _, err := a.wallet.NewAddress(ctx, false)
 	if err != nil {
 		return "", err
@@ -717,12 +802,55 @@ func (a *covenantlessArkClient) Claim(ctx context.Context) (string, error) {
 		Amount:     pendingBalance,
 	}
 
+	filteredVtxos := make([]client.Vtxo, 0)
+	filteredBoardingUtxos := make([]explorer.Utxo, 0)
+
+	for _, vtxo := range pendingVtxos {
+		vtxoScript, err := bitcointree.ParseVtxoScript(vtxo.Descriptor)
+		if err != nil {
+			return "", err
+		}
+
+		if _, ok := vtxoScript.(*bitcointree.HTLCVtxoScript); ok {
+			if _, ok := opts.HtlcPreimages[vtxo.Outpoint]; !ok {
+				continue
+			}
+		}
+
+		if len(opts.FilterOutpoints) == 0 {
+			filteredVtxos = append(filteredVtxos, vtxo)
+			continue
+		}
+
+		for _, outpoint := range opts.FilterOutpoints {
+			if vtxo.Txid == outpoint.Txid && vtxo.VOut == outpoint.VOut {
+				filteredVtxos = append(filteredVtxos, vtxo)
+				break
+			}
+		}
+	}
+
+	for _, utxo := range boardingUtxos {
+		if len(opts.FilterOutpoints) == 0 {
+			filteredBoardingUtxos = append(filteredBoardingUtxos, utxo)
+			continue
+		}
+
+		for _, outpoint := range opts.FilterOutpoints {
+			if utxo.Txid == outpoint.Txid && utxo.Vout == outpoint.VOut {
+				filteredBoardingUtxos = append(filteredBoardingUtxos, utxo)
+				break
+			}
+		}
+	}
+
 	return a.selfTransferAllPendingPayments(
 		ctx,
-		pendingVtxos,
-		boardingUtxos,
+		filteredVtxos,
+		filteredBoardingUtxos,
 		receiver,
 		hex.EncodeToString(mypubkey.SerializeCompressed()),
+		opts.HtlcPreimages,
 	)
 }
 
@@ -885,7 +1013,10 @@ func (a *covenantlessArkClient) sendOnchain(
 }
 
 func (a *covenantlessArkClient) sendOffchain(
-	ctx context.Context, withExpiryCoinselect bool, receivers []Receiver,
+	ctx context.Context,
+	withExpiryCoinselect bool,
+	receivers []Receiver,
+	opts Options,
 ) (string, error) {
 	if a.wallet.IsLocked() {
 		return "", fmt.Errorf("wallet is locked")
@@ -941,11 +1072,39 @@ func (a *covenantlessArkClient) sendOffchain(
 		if err != nil {
 			return "", err
 		}
+
 		vtxos = append(vtxos, spendableVtxos...)
 	}
 
+	filteredVtxos := make([]client.Vtxo, 0)
+
+	for _, vtxo := range vtxos {
+		vtxoScript, err := bitcointree.ParseVtxoScript(vtxo.Descriptor)
+		if err != nil {
+			return "", err
+		}
+
+		if _, ok := vtxoScript.(*bitcointree.HTLCVtxoScript); ok {
+			if _, ok := opts.HtlcPreimages[vtxo.Outpoint]; !ok {
+				continue
+			}
+		}
+
+		if len(opts.FilterOutpoints) == 0 {
+			filteredVtxos = append(filteredVtxos, vtxo)
+			continue
+		}
+
+		for _, outpoint := range opts.FilterOutpoints {
+			if vtxo.Txid == outpoint.Txid && vtxo.VOut == outpoint.VOut {
+				filteredVtxos = append(filteredVtxos, vtxo)
+				break
+			}
+		}
+	}
+
 	selectedCoins, changeAmount, err := utils.CoinSelect(
-		vtxos, sumOfReceivers, a.Dust, withExpiryCoinselect,
+		filteredVtxos, sumOfReceivers, a.Dust, withExpiryCoinselect,
 	)
 	if err != nil {
 		return "", err
@@ -1001,7 +1160,14 @@ func (a *covenantlessArkClient) sendOffchain(
 	log.Infof("payment registered with id: %s", paymentID)
 
 	poolTxID, err := a.handleRoundStream(
-		ctx, paymentID, selectedCoins, nil, "", receiversOutput, roundEphemeralKey,
+		ctx,
+		paymentID,
+		selectedCoins,
+		nil,
+		"",
+		receiversOutput,
+		roundEphemeralKey,
+		opts.HtlcPreimages,
 	)
 	if err != nil {
 		return "", err
@@ -1093,6 +1259,8 @@ func (a *covenantlessArkClient) handleRoundStream(
 	boardingDescriptor string,
 	receivers []client.Output,
 	roundEphemeralKey *secp256k1.PrivateKey,
+	// vHTLC extra data to sign
+	preimages map[client.Outpoint]string,
 ) (string, error) {
 	eventsCh, close, err := a.client.GetEventStream(ctx, paymentID)
 	if err != nil {
@@ -1171,7 +1339,13 @@ func (a *covenantlessArkClient) handleRoundStream(
 				log.Info("a round finalization started")
 
 				signedForfeitTxs, signedRoundTx, err := a.handleRoundFinalization(
-					ctx, event.(client.RoundFinalizationEvent), vtxosToSign, boardingUtxos, boardingDescriptor, receivers,
+					ctx,
+					event.(client.RoundFinalizationEvent),
+					vtxosToSign,
+					boardingUtxos,
+					boardingDescriptor,
+					receivers,
+					preimages,
 				)
 				if err != nil {
 					return "", err
@@ -1278,6 +1452,7 @@ func (a *covenantlessArkClient) handleRoundFinalization(
 	boardingUtxos []explorer.Utxo,
 	boardingDescriptor string,
 	receivers []client.Output,
+	preimages map[client.Outpoint]string,
 ) ([]string, string, error) {
 	if err := a.validateCongestionTree(event, receivers); err != nil {
 		return nil, "", fmt.Errorf("failed to verify congestion tree: %s", err)
@@ -1297,7 +1472,7 @@ func (a *covenantlessArkClient) handleRoundFinalization(
 
 	if len(vtxos) > 0 {
 		signedForfeits, err := a.createAndSignForfeits(
-			ctx, vtxos, event.Connectors, event.MinRelayFeeRate, myPubkey,
+			ctx, vtxos, event.Connectors, event.MinRelayFeeRate, myPubkey, preimages,
 		)
 		if err != nil {
 			return nil, "", err
@@ -1516,6 +1691,7 @@ func (a *covenantlessArkClient) createAndSignForfeits(
 	connectors []string,
 	feeRate chainfee.SatPerKVByte,
 	myPubkey *secp256k1.PublicKey,
+	preimages map[client.Outpoint]string,
 ) ([]string, error) {
 
 	signedForfeits := make([]string, 0)
@@ -1561,9 +1737,38 @@ func (a *covenantlessArkClient) createAndSignForfeits(
 			Index: vtxo.VOut,
 		}
 
-		forfeitClosure := &bitcointree.MultisigClosure{
-			Pubkey:    myPubkey,
-			AspPubkey: a.AspPubkey,
+		var forfeitClosure bitcointree.Closure
+		var preimage []byte
+
+		if vHTLCscript, ok := vtxoScript.(*bitcointree.HTLCVtxoScript); ok {
+			prei, hasPreimage := preimages[vtxo.Outpoint]
+			if !hasPreimage {
+				return nil, fmt.Errorf("no preimage found for %s:%d", vtxo.Outpoint.Txid, vtxo.Outpoint.VOut)
+			}
+
+			preimageBytes, err := hex.DecodeString(prei)
+			if err != nil {
+				return nil, err
+			}
+
+			preimage = preimageBytes
+
+			h := hex.EncodeToString(btcutil.Hash160(preimageBytes))
+
+			if vHTLCscript.PreimageHash != h {
+				return nil, fmt.Errorf("invalid preimage hash for %s:%d", vtxo.Outpoint.Txid, vtxo.Outpoint.VOut)
+			}
+
+			forfeitClosure = &bitcointree.PreimageMultisigClosure{
+				Pubkey:       myPubkey,
+				AspPubkey:    a.AspPubkey,
+				PreimageHash: h,
+			}
+		} else {
+			forfeitClosure = &bitcointree.MultisigClosure{
+				Pubkey:    myPubkey,
+				AspPubkey: a.AspPubkey,
+			}
 		}
 
 		forfeitLeaf, err := forfeitClosure.Leaf()
@@ -1595,6 +1800,12 @@ func (a *covenantlessArkClient) createAndSignForfeits(
 			}
 
 			for _, forfeit := range forfeits {
+				if len(preimage) > 0 {
+					if err := bitcointree.AddPreimage(1, forfeit, preimage); err != nil {
+						return nil, err
+					}
+				}
+
 				forfeit.Inputs[1].TaprootLeafScript = []*psbt.TaprootTapLeafScript{&tapscript}
 
 				b64, err := forfeit.B64Encode()
@@ -1910,7 +2121,12 @@ func (a *covenantlessArkClient) getVtxos(
 }
 
 func (a *covenantlessArkClient) selfTransferAllPendingPayments(
-	ctx context.Context, pendingVtxos []client.Vtxo, boardingUtxos []explorer.Utxo, myself client.Output, mypubkey string,
+	ctx context.Context,
+	pendingVtxos []client.Vtxo,
+	boardingUtxos []explorer.Utxo,
+	output client.Output,
+	mypubkey string,
+	preimages map[client.Outpoint]string,
 ) (string, error) {
 	inputs := make([]client.Input, 0, len(pendingVtxos)+len(boardingUtxos))
 
@@ -1937,7 +2153,8 @@ func (a *covenantlessArkClient) selfTransferAllPendingPayments(
 			Descriptor: boardingDescriptor,
 		})
 	}
-	outputs := []client.Output{myself}
+
+	outputs := []client.Output{output}
 
 	roundEphemeralKey, err := secp256k1.GeneratePrivateKey()
 	if err != nil {
@@ -1958,13 +2175,38 @@ func (a *covenantlessArkClient) selfTransferAllPendingPayments(
 	}
 
 	roundTxid, err := a.handleRoundStream(
-		ctx, paymentID, pendingVtxos, boardingUtxos, boardingDescriptor, outputs, roundEphemeralKey,
+		ctx, paymentID, pendingVtxos, boardingUtxos, boardingDescriptor, outputs, roundEphemeralKey, preimages,
 	)
 	if err != nil {
 		return "", err
 	}
 
 	return roundTxid, nil
+}
+
+func (a *covenantlessArkClient) offchainAddressToHTLCVtxoDescriptor(myaddr string, receiveraddr string, preimageHash string) (string, error) {
+	_, receiverPubkey, aspPubkey, err := common.DecodeAddress(receiveraddr)
+	if err != nil {
+		return "", err
+	}
+
+	_, userPubKey, _, err := common.DecodeAddress(myaddr)
+	if err != nil {
+		return "", err
+	}
+
+	vtxoScript := bitcointree.HTLCVtxoScript{
+		Receiver:                receiverPubkey,
+		Sender:                  userPubKey,
+		Asp:                     aspPubkey,
+		PreimageHash:            preimageHash,
+		SenderReclaimDelay:      uint(a.UnilateralExitDelay),
+		SenderReclaimAloneDelay: uint(a.UnilateralExitDelay),
+		ReceiverRefundDelay:     uint(a.UnilateralExitDelay),
+		ReceiverExitDelay:       uint(a.UnilateralExitDelay),
+	}
+
+	return vtxoScript.ToDescriptor(), nil
 }
 
 func (a *covenantlessArkClient) offchainAddressToReversibleVtxoDescriptor(myaddr string, receiveraddr string) (string, error) {

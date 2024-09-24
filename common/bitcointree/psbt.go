@@ -1,3 +1,4 @@
+// This file contains functions to work with custom PSBT fields
 package bitcointree
 
 import (
@@ -9,7 +10,27 @@ import (
 
 var (
 	COSIGNER_PSBT_KEY_PREFIX = []byte("cosigner")
+	PREIMAGE_PSBT_KEY        = []byte("preimage")
 )
+
+func AddPreimage(inIndex int, ptx *psbt.Packet, preimage []byte) error {
+	ptx.Inputs[inIndex].Unknowns = append(ptx.Inputs[inIndex].Unknowns, &psbt.Unknown{
+		Value: preimage,
+		Key:   PREIMAGE_PSBT_KEY,
+	})
+
+	return nil
+}
+
+func GetPreimage(in psbt.PInput) []byte {
+	for _, u := range in.Unknowns {
+		if bytes.Equal(u.Key, PREIMAGE_PSBT_KEY) {
+			return u.Value
+		}
+	}
+
+	return nil
+}
 
 func AddCosignerKey(inIndex int, ptx *psbt.Packet, key *secp256k1.PublicKey) error {
 	currentCosigners, err := GetCosignerKeys(ptx.Inputs[inIndex])

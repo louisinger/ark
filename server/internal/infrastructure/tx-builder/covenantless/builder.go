@@ -48,7 +48,10 @@ func (b *txBuilder) GetTxID(tx string) (string, error) {
 }
 
 func (b *txBuilder) VerifyTapscriptPartialSigs(tx string) (bool, string, error) {
-	ptx, _ := psbt.NewFromRawBytes(strings.NewReader(tx), true)
+	ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
+	if err != nil {
+		return false, "", err
+	}
 	txid := ptx.UnsignedTx.TxID()
 
 	for index, input := range ptx.Inputs {
@@ -82,7 +85,30 @@ func (b *txBuilder) VerifyTapscriptPartialSigs(tx string) (bool, string, error) 
 			return false, txid, fmt.Errorf("invalid control block for input %d", index)
 		}
 
-		preimage, err := b.getTaprootPreimage(
+		closure, err := bitcointree.DecodeClosure(tapLeaf.Script)
+		if err != nil {
+			return false, txid, err
+		}
+
+		// handle vHTLC verifications
+		if htlcClosure, ok := closure.(*bitcointree.PreimageMultisigClosure); ok {
+			preimage := bitcointree.GetPreimage(input)
+			if preimage == nil {
+				return false, txid, fmt.Errorf("missing preimage for input %d", index)
+			}
+
+			preimageHash := btcutil.Hash160(preimage)
+			expectedHash, err := hex.DecodeString(htlcClosure.PreimageHash)
+			if err != nil {
+				return false, txid, err
+			}
+
+			if !bytes.Equal(preimageHash, expectedHash) {
+				return false, txid, fmt.Errorf("invalid preimage for input %d", index)
+			}
+		}
+
+		message, err := b.getTaprootPreimage(
 			tx,
 			index,
 			tapLeaf.Script,
@@ -102,7 +128,7 @@ func (b *txBuilder) VerifyTapscriptPartialSigs(tx string) (bool, string, error) 
 				return false, txid, err
 			}
 
-			if !sig.Verify(preimage, pubkey) {
+			if !sig.Verify(message, pubkey) {
 				return false, txid, fmt.Errorf("invalid signature for tx %s", txid)
 			}
 		}

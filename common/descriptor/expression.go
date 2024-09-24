@@ -12,11 +12,12 @@ import (
 )
 
 var (
-	ErrInvalidXOnlyKey    = errors.New("invalid x only public key")
-	ErrInvalidPkPolicy    = errors.New("invalid public key policy")
-	ErrInvalidOlderPolicy = errors.New("invalid older policy")
-	ErrInvalidAndPolicy   = errors.New("invalid and() policy")
-	ErrNotExpectedPolicy  = errors.New("not the expected policy")
+	ErrInvalidXOnlyKey      = errors.New("invalid x only public key")
+	ErrInvalidPkPolicy      = errors.New("invalid public key policy")
+	ErrInvalidOlderPolicy   = errors.New("invalid older policy")
+	ErrInvalidAndPolicy     = errors.New("invalid and() policy")
+	ErrInvalidHash160Policy = errors.New("invalid hash160() policy")
+	ErrNotExpectedPolicy    = errors.New("not the expected policy")
 )
 
 const (
@@ -199,6 +200,60 @@ func (e *And) Script(verify bool) (string, error) {
 	return firstScript + secondScript, nil
 }
 
+type Hash160 struct {
+	Hash string
+}
+
+func (e *Hash160) String() string {
+	return fmt.Sprintf("hash160(%s)", e.Hash)
+}
+
+func (e *Hash160) Parse(policy string) error {
+	if !strings.HasPrefix(policy, "hash160(") {
+		return ErrNotExpectedPolicy
+	}
+
+	index := strings.IndexRune(policy, ')')
+	if index == -1 {
+		return ErrInvalidHash160Policy
+	}
+
+	h := policy[len("hash160("):index]
+	if len(h) != 40 {
+		return fmt.Errorf("%s: expected 20 bytes, got %d", ErrInvalidHash160Policy.Error(), len(h)/2)
+	}
+
+	e.Hash = h
+
+	return nil
+}
+
+func (e *Hash160) Script(verify bool) (string, error) {
+	lastOp := txscript.OP_EQUAL
+	if verify {
+		lastOp = txscript.OP_EQUALVERIFY
+	}
+
+	h, err := hex.DecodeString(e.Hash)
+	if err != nil {
+		return "", err
+	}
+
+	script, err := txscript.NewScriptBuilder().
+		AddOp(txscript.OP_SIZE).
+		AddInt64(32).
+		AddOp(txscript.OP_EQUALVERIFY).
+		AddOp(txscript.OP_HASH160).
+		AddData(h).
+		AddOp(byte(lastOp)).
+		Script()
+	if err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(script), nil
+}
+
 func parseExpression(policy string) (Expression, error) {
 	policy = strings.TrimSpace(policy)
 	if policy[0] == '{' {
@@ -208,6 +263,7 @@ func parseExpression(policy string) (Expression, error) {
 	expressions = append(expressions, &PK{})
 	expressions = append(expressions, &Older{})
 	expressions = append(expressions, &And{})
+	expressions = append(expressions, &Hash160{})
 
 	for _, e := range expressions {
 		if err := e.Parse(policy); err != nil {

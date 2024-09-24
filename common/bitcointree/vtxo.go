@@ -16,18 +16,20 @@ type VtxoScript common.VtxoScript[bitcoinTapTree]
 
 func ParseVtxoScript(desc string) (VtxoScript, error) {
 	v := &DefaultVtxoScript{}
-	// TODO add other type
 	err := v.FromDescriptor(desc)
 	if err != nil {
 		v := &ReversibleVtxoScript{}
 		err = v.FromDescriptor(desc)
 		if err != nil {
-			return nil, fmt.Errorf("invalid vtxo descriptor: %s", desc)
+			v := &HTLCVtxoScript{}
+			err = v.FromDescriptor(desc)
+			if err != nil {
+				return nil, fmt.Errorf("invalid vtxo descriptor: %s", desc)
+			}
+			return v, nil
 		}
-
 		return v, nil
 	}
-
 	return v, nil
 }
 
@@ -178,6 +180,151 @@ func (v *ReversibleVtxoScript) TapTree() (*secp256k1.PublicKey, bitcoinTapTree, 
 
 	tapTree := txscript.AssembleTaprootScriptTree(
 		*redeemLeaf, *forfeitLeaf, *reverseForfeitLeaf,
+	)
+
+	root := tapTree.RootNode.TapHash()
+	taprootKey := txscript.ComputeTaprootOutputKey(
+		UnspendableKey(),
+		root[:],
+	)
+
+	return taprootKey, bitcoinTapTree{tapTree}, nil
+}
+
+/*
+* HTLCVtxoScript allows owner of the VTXO to atomically swap with LN funds, it contains 6 branches
+* - Receiver and ASP and preimage (forfeit receiver / claim with preimage)
+* - Receiver and ASP and Sender (refund)
+* - Sender and ASP after T_Reclaim (reclaim / cancel the swap)
+* - Sender after T_Reclaim' (reclaim without ASP) - with T_Reclaim' > T_Reclaim
+* - Receiver and ASP after T_Refund (refund)
+* - Receiver and preimage after T_Redeem (exit path for the receiver)
+ */
+type HTLCVtxoScript struct {
+	Sender                  *secp256k1.PublicKey // sender of vtxos, receive LN funds
+	Receiver                *secp256k1.PublicKey // receive vtxo, send LN funds
+	Asp                     *secp256k1.PublicKey
+	PreimageHash            string
+	SenderReclaimDelay      uint
+	SenderReclaimAloneDelay uint
+	ReceiverRefundDelay     uint
+	ReceiverExitDelay       uint
+}
+
+func (v *HTLCVtxoScript) ToDescriptor() string {
+	sender := hex.EncodeToString(schnorr.SerializePubKey(v.Sender))
+	receiver := hex.EncodeToString(schnorr.SerializePubKey(v.Receiver))
+	asp := hex.EncodeToString(schnorr.SerializePubKey(v.Asp))
+
+	return fmt.Sprintf(
+		descriptor.HTLCVtxoScriptTemplate,
+		hex.EncodeToString(UnspendableKey().SerializeCompressed()),
+		sender,
+		receiver,
+		asp,
+		v.SenderReclaimDelay,
+		sender,
+		asp,
+		v.SenderReclaimAloneDelay,
+		sender,
+		v.ReceiverRefundDelay,
+		receiver,
+		asp,
+		v.PreimageHash,
+		receiver,
+		asp,
+		v.PreimageHash,
+		v.ReceiverExitDelay,
+		receiver,
+	)
+}
+
+func (v *HTLCVtxoScript) FromDescriptor(desc string) error {
+	sender, receiver, asp, reclaimDelay, reclaimAloneDelay, refundDelay, exitDelay, preimageHash, err := descriptor.ParseHTLCVtxoDescriptor(desc)
+	if err != nil {
+		return err
+	}
+
+	v.Sender = sender
+	v.Receiver = receiver
+	v.Asp = asp
+	v.SenderReclaimDelay = reclaimDelay
+	v.SenderReclaimAloneDelay = reclaimAloneDelay
+	v.ReceiverRefundDelay = refundDelay
+	v.ReceiverExitDelay = exitDelay
+	v.PreimageHash = preimageHash
+
+	return nil
+}
+
+func (v *HTLCVtxoScript) TapTree() (*secp256k1.PublicKey, bitcoinTapTree, error) {
+	refundClosure := &RefundClosure{
+		Sender:    v.Sender,
+		Receiver:  v.Receiver,
+		AspPubkey: v.Asp,
+	}
+
+	refundLeaf, err := refundClosure.Leaf()
+	if err != nil {
+		return nil, bitcoinTapTree{}, err
+	}
+
+	reclaimWithASPClosure := &CSVMultisigClosure{
+		Pubkey:    v.Sender,
+		AspPubkey: v.Asp,
+		Seconds:   v.SenderReclaimDelay,
+	}
+
+	reclaimWithASPLeaf, err := reclaimWithASPClosure.Leaf()
+	if err != nil {
+		return nil, bitcoinTapTree{}, err
+	}
+
+	reclaimAloneClosure := &CSVSigClosure{
+		Pubkey:  v.Sender,
+		Seconds: v.SenderReclaimAloneDelay,
+	}
+
+	reclaimAloneLeaf, err := reclaimAloneClosure.Leaf()
+	if err != nil {
+		return nil, bitcoinTapTree{}, err
+	}
+
+	receiverRefundClosure := &CSVMultisigClosure{
+		Pubkey:    v.Receiver,
+		AspPubkey: v.Asp,
+		Seconds:   v.ReceiverRefundDelay,
+	}
+
+	receiverRefundLeaf, err := receiverRefundClosure.Leaf()
+	if err != nil {
+		return nil, bitcoinTapTree{}, err
+	}
+
+	claimClosure := &PreimageMultisigClosure{
+		PreimageHash: v.PreimageHash,
+		Pubkey:       v.Receiver,
+		AspPubkey:    v.Asp,
+	}
+
+	claimLeaf, err := claimClosure.Leaf()
+	if err != nil {
+		return nil, bitcoinTapTree{}, err
+	}
+
+	receiverExitClosure := &CSVPreimageClosure{
+		PreimageHash: v.PreimageHash,
+		Pubkey:       v.Receiver,
+		Seconds:      v.ReceiverExitDelay,
+	}
+
+	receiverExitLeaf, err := receiverExitClosure.Leaf()
+	if err != nil {
+		return nil, bitcoinTapTree{}, err
+	}
+
+	tapTree := txscript.AssembleTaprootScriptTree(
+		*refundLeaf, *reclaimWithASPLeaf, *reclaimAloneLeaf, *receiverRefundLeaf, *claimLeaf, *receiverExitLeaf,
 	)
 
 	root := tapTree.RootNode.TapHash()

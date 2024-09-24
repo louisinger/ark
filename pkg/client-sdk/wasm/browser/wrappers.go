@@ -195,7 +195,7 @@ func SendOffChainWrapper() js.Func {
 		}
 
 		txID, err := arkSdkClient.SendOffChain(
-			context.Background(), withExpiryCoinselect, receivers,
+			context.Background(), withExpiryCoinselect, receivers, arksdk.Options{},
 		)
 		if err != nil {
 			return nil, err
@@ -220,7 +220,7 @@ func CollaborativeRedeemWrapper() js.Func {
 		withExpiryCoinselect := args[2].Bool()
 
 		txID, err := arkSdkClient.CollaborativeRedeem(
-			context.Background(), addr, amount, withExpiryCoinselect,
+			context.Background(), addr, amount, withExpiryCoinselect, arksdk.Options{},
 		)
 		if err != nil {
 			return nil, err
