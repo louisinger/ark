@@ -4,7 +4,7 @@
 
 vHTLC are identified by the following taproot descriptor:
 
-```json
+```
 tr(unspendable, {
   {
       {
