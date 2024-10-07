@@ -150,7 +150,7 @@ func (f *CSVPreimageClosure) Decode(script []byte) (bool, error) {
 
 	sequence := script[hash160Index+33 : csvIndex]
 
-	seconds, err := common.BIP68Decode(sequence)
+	seconds, err := common.BIP68DecodeSequence(sequence)
 	if err != nil {
 		return false, err
 	}
@@ -298,7 +298,7 @@ func (f *CSVMultisigClosure) Decode(script []byte) (bool, error) {
 
 	sequence := script[1:csvIndex]
 
-	seconds, err := common.BIP68Decode(sequence)
+	seconds, err := common.BIP68DecodeSequence(sequence)
 	if err != nil {
 		return false, err
 	}
