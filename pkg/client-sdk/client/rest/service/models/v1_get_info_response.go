@@ -23,6 +23,9 @@ type V1GetInfoResponse struct {
 	// dust
 	Dust string `json:"dust,omitempty"`
 
+	// forfeit address
+	ForfeitAddress string `json:"forfeitAddress,omitempty"`
+
 	// network
 	Network string `json:"network,omitempty"`
 
@@ -37,6 +40,9 @@ type V1GetInfoResponse struct {
 
 	// unilateral exit delay
 	UnilateralExitDelay string `json:"unilateralExitDelay,omitempty"`
+
+	// vtxo descriptor templates
+	VtxoDescriptorTemplates []string `json:"vtxoDescriptorTemplates"`
 }
 
 // Validate validates this v1 get info response

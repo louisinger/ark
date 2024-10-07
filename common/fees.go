@@ -1,6 +1,8 @@
 package common
 
 import (
+	"fmt"
+
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcwallet/waddrmgr"
@@ -19,12 +21,16 @@ var TreeTxSize = (&input.TxWeightEstimator{}).
 var CovenantTreeTxSize = TreeTxSize * 2
 
 var ConnectorTxSize = (&input.TxWeightEstimator{}).
-	AddP2WKHInput().
-	AddP2WKHOutput().
-	AddP2WKHOutput().
+	AddTaprootKeySpendInput(txscript.SigHashDefault).
+	AddP2TROutput().
+	AddP2TROutput().
 	VSize()
 
-func ComputeForfeitMinRelayFee(feeRate chainfee.SatPerKVByte, vtxoScriptTapTree TaprootTree) (uint64, error) {
+func ComputeForfeitMinRelayFee(
+	feeRate chainfee.SatPerKVByte,
+	vtxoScriptTapTree TaprootTree,
+	aspScriptClass txscript.ScriptClass,
+) (uint64, error) {
 	txWeightEstimator := &input.TxWeightEstimator{}
 
 	biggestVtxoLeafProof, err := BiggestLeafMerkleProof(vtxoScriptTapTree)
@@ -45,7 +51,21 @@ func ComputeForfeitMinRelayFee(feeRate chainfee.SatPerKVByte, vtxoScriptTapTree 
 			ControlBlock:   ctrlBlock,
 		},
 	)
-	txWeightEstimator.AddP2TROutput() // asp output
+
+	switch aspScriptClass {
+	case txscript.PubKeyHashTy:
+		txWeightEstimator.AddP2PKHOutput()
+	case txscript.ScriptHashTy:
+		txWeightEstimator.AddP2SHOutput()
+	case txscript.WitnessV0PubKeyHashTy:
+		txWeightEstimator.AddP2WKHOutput()
+	case txscript.WitnessV0ScriptHashTy:
+		txWeightEstimator.AddP2WSHOutput()
+	case txscript.WitnessV1TaprootTy:
+		txWeightEstimator.AddP2TROutput()
+	default:
+		return 0, fmt.Errorf("unknown asp script class: %v", aspScriptClass)
+	}
 
 	return uint64(feeRate.FeeForVSize(lntypes.VByte(txWeightEstimator.VSize())).ToUnit(btcutil.AmountSatoshi)), nil
 }

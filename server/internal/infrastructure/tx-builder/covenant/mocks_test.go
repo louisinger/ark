@@ -151,7 +151,7 @@ func (m *mockedWallet) GetDustAmount(ctx context.Context) (uint64, error) {
 	return res, args.Error(1)
 }
 
-func (m *mockedWallet) IsTransactionConfirmed(ctx context.Context, txid string) (bool, int64, error) {
+func (m *mockedWallet) IsTransactionConfirmed(ctx context.Context, txid string) (bool, int64, int64, error) {
 	args := m.Called(ctx, txid)
 
 	var res bool
@@ -159,12 +159,17 @@ func (m *mockedWallet) IsTransactionConfirmed(ctx context.Context, txid string) 
 		res = a.(bool)
 	}
 
+	var height int64
+	if h := args.Get(1); h != nil {
+		height = h.(int64)
+	}
+
 	var blocktime int64
 	if b := args.Get(1); b != nil {
 		blocktime = b.(int64)
 	}
 
-	return res, blocktime, args.Error(2)
+	return res, height, blocktime, args.Error(2)
 }
 
 func (m *mockedWallet) SignTransactionTapscript(ctx context.Context, pset string, inputIndexes []int) (string, error) {
@@ -268,6 +273,16 @@ func (m *mockedWallet) MinRelayFeeRate(ctx context.Context) chainfee.SatPerKVByt
 		res = a.(chainfee.SatPerKVByte)
 	}
 	return res
+}
+
+func (m *mockedWallet) GetForfeitAddress(ctx context.Context) (string, error) {
+	args := m.Called(ctx)
+
+	var res string
+	if a := args.Get(0); a != nil {
+		res = a.(string)
+	}
+	return res, args.Error(1)
 }
 
 type mockedInput struct {

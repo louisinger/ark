@@ -21,19 +21,19 @@ type PaymentReceiverVw struct {
 }
 
 type PaymentVtxoVw struct {
-	Txid          sql.NullString
-	Vout          sql.NullInt64
-	Amount        sql.NullInt64
-	PoolTx        sql.NullString
-	SpentBy       sql.NullString
-	Spent         sql.NullBool
-	Redeemed      sql.NullBool
-	Swept         sql.NullBool
-	ExpireAt      sql.NullInt64
-	PaymentID     sql.NullString
-	RedeemTx      sql.NullString
-	Descriptor    sql.NullString
-	PendingChange sql.NullBool
+	Txid       sql.NullString
+	Vout       sql.NullInt64
+	Amount     sql.NullInt64
+	PoolTx     sql.NullString
+	SpentBy    sql.NullString
+	Spent      sql.NullBool
+	Redeemed   sql.NullBool
+	Swept      sql.NullBool
+	ExpireAt   sql.NullInt64
+	PaymentID  sql.NullString
+	RedeemTx   sql.NullString
+	Descriptor sql.NullString
+	Pending    sql.NullBool
 }
 
 type Receiver struct {
@@ -87,34 +87,18 @@ type Tx struct {
 	IsLeaf     sql.NullBool
 }
 
-type UncondForfeitTx struct {
-	ID       int64
-	Tx       string
-	VtxoTxid string
-	VtxoVout int64
-	Position int64
-}
-
-type UncondForfeitTxVw struct {
-	ID       sql.NullInt64
-	Tx       sql.NullString
-	VtxoTxid sql.NullString
-	VtxoVout sql.NullInt64
-	Position sql.NullInt64
-}
-
 type Vtxo struct {
-	Txid          string
-	Vout          int64
-	Amount        int64
-	PoolTx        string
-	SpentBy       string
-	Spent         bool
-	Redeemed      bool
-	Swept         bool
-	ExpireAt      int64
-	PaymentID     sql.NullString
-	RedeemTx      sql.NullString
-	Descriptor    sql.NullString
-	PendingChange sql.NullBool
+	Txid       string
+	Vout       int64
+	Amount     int64
+	PoolTx     string
+	SpentBy    string
+	Spent      bool
+	Redeemed   bool
+	Swept      bool
+	ExpireAt   int64
+	PaymentID  sql.NullString
+	RedeemTx   sql.NullString
+	Descriptor sql.NullString
+	Pending    bool
 }
