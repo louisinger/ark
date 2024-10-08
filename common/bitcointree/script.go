@@ -136,6 +136,10 @@ func (f *CSVPreimageClosure) Decode(script []byte) (bool, error) {
 		return false, nil
 	}
 
+	if len(script) < hash160Index+33 {
+		return false, nil
+	}
+
 	preimageHash := script[hash160Index+1 : hash160Index+33]
 	if len(preimageHash) != 32 {
 		return false, nil
@@ -192,7 +196,7 @@ func (f *PreimageMultisigClosure) Leaf() (*txscript.TapLeaf, error) {
 
 	script, err := txscript.NewScriptBuilder().
 		AddOp(txscript.OP_SIZE).
-		AddInt64(32).
+		AddInt64(20).
 		AddOp(txscript.OP_EQUALVERIFY).
 		AddOp(txscript.OP_HASH160).
 		AddData(h).
@@ -215,6 +219,10 @@ func (f *PreimageMultisigClosure) Decode(script []byte) (bool, error) {
 		script, []byte{txscript.OP_HASH160},
 	)
 	if hash160Index == -1 || hash160Index == 0 {
+		return false, nil
+	}
+
+	if len(script) <= hash160Index+22 {
 		return false, nil
 	}
 

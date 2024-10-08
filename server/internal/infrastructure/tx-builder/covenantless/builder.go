@@ -472,7 +472,7 @@ func (b *txBuilder) BuildAsyncPaymentTransactions(
 			PkScript: vtxoOutputScript,
 		}
 
-		if defaultVtxoScript, ok := vtxoScript.(*bitcointree.DefaultVtxoScript); ok {
+		if defaultVtxoScript, isDefault := vtxoScript.(*bitcointree.DefaultVtxoScript); isDefault {
 			forfeitLeaf := bitcointree.MultisigClosure{
 				Pubkey:    defaultVtxoScript.Owner,
 				AspPubkey: defaultVtxoScript.Asp,
@@ -503,8 +503,40 @@ func (b *txBuilder) BuildAsyncPaymentTransactions(
 				RevealedScript: leafProof.Script,
 				ControlBlock:   ctrlBlock,
 			})
+		} else if vhtlcScript, isVHTLC := vtxoScript.(*bitcointree.HTLCVtxoScript); isVHTLC {
+			forfeitLeaf := bitcointree.PreimageMultisigClosure{
+				Pubkey:       vhtlcScript.Receiver,
+				AspPubkey:    vhtlcScript.Asp,
+				PreimageHash: hex.EncodeToString(make([]byte, 32)),
+			}
+
+			tapLeaf, err := forfeitLeaf.Leaf()
+			if err != nil {
+				return "", err
+			}
+
+			leafProof, err := vtxoTree.GetTaprootMerkleProof(tapLeaf.TapHash())
+			if err != nil {
+				return "", err
+			}
+
+			tapscripts[index] = &psbt.TaprootTapLeafScript{
+				ControlBlock: leafProof.ControlBlock,
+				Script:       leafProof.Script,
+				LeafVersion:  txscript.BaseLeafVersion,
+			}
+
+			ctrlBlock, err := txscript.ParseControlBlock(leafProof.ControlBlock)
+			if err != nil {
+				return "", err
+			}
+
+			redeemTxWeightEstimator.AddTapscriptInput(64*2+40, &waddrmgr.Tapscript{
+				RevealedScript: leafProof.Script,
+				ControlBlock:   ctrlBlock,
+			})
 		} else {
-			return "", fmt.Errorf("vtxo %s:%d script is not default script, can't be async spent", vtxo.Txid, vtxo.VOut)
+			return "", fmt.Errorf("vtxo %s:%d script prevents you to async spent", vtxo.Txid, vtxo.VOut)
 		}
 
 		ins = append(ins, vtxoOutpoint)
