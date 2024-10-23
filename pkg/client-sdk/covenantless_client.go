@@ -665,8 +665,7 @@ func (a *covenantlessArkClient) SendOnChain(
 
 func (a *covenantlessArkClient) SendOffChain(
 	ctx context.Context,
-	receivers []Receiver,
-	opts *CoinSelectOptions,
+	withExpiryCoinselect bool, receivers []Receiver,
 ) (string, error) {
 	for _, receiver := range receivers {
 		if receiver.IsOnchain() {
@@ -674,15 +673,19 @@ func (a *covenantlessArkClient) SendOffChain(
 		}
 	}
 
-	return a.sendOffchain(ctx, receivers, opts)
+	return a.sendOffchain(ctx, withExpiryCoinselect, receivers)
 }
 
-func (a *covenantlessArkClient) UnilateralRedeem(ctx context.Context, opts *CoinSelectOptions) error {
+func (a *covenantlessArkClient) Settle(ctx context.Context) (string, error) {
+	return a.sendOffchain(ctx, false, nil)
+}
+
+func (a *covenantlessArkClient) UnilateralRedeem(ctx context.Context) error {
 	if a.wallet.IsLocked() {
 		return fmt.Errorf("wallet is locked")
 	}
 
-	vtxos, err := a.getVtxos(ctx, opts)
+	vtxos, err := a.getVtxos(ctx, false, nil)
 	if err != nil {
 		return err
 	}
@@ -738,9 +741,7 @@ func (a *covenantlessArkClient) UnilateralRedeem(ctx context.Context, opts *Coin
 
 func (a *covenantlessArkClient) CollaborativeRedeem(
 	ctx context.Context,
-	addr string,
-	amount uint64,
-	opts *CoinSelectOptions,
+	addr string, amount uint64, withExpiryCoinselect bool,
 ) (string, error) {
 	if a.wallet.IsLocked() {
 		return "", fmt.Errorf("wallet is locked")
@@ -764,7 +765,7 @@ func (a *covenantlessArkClient) CollaborativeRedeem(
 	}
 
 	vtxos := make([]client.DescriptorVtxo, 0)
-	spendableVtxos, err := a.getVtxos(ctx, opts)
+	spendableVtxos, err := a.getVtxos(ctx, false, nil)
 	if err != nil {
 		return "", err
 	}
@@ -785,12 +786,10 @@ func (a *covenantlessArkClient) CollaborativeRedeem(
 		}
 	}
 
-	boardingUtxos, err := a.getClaimableBoardingUtxos(ctx, opts)
+	boardingUtxos, err := a.getClaimableBoardingUtxos(ctx, nil)
 	if err != nil {
 		return "", err
 	}
-
-	withExpiryCoinselect := opts != nil && opts.WithExpirySorting
 
 	selectedBoardingCoins, selectedCoins, changeAmount, err := utils.CoinSelect(
 		boardingUtxos, vtxos, amount, a.Dust, withExpiryCoinselect,
@@ -862,8 +861,7 @@ func (a *covenantlessArkClient) CollaborativeRedeem(
 
 func (a *covenantlessArkClient) SendAsync(
 	ctx context.Context,
-	receivers []Receiver,
-	opts *CoinSelectOptions,
+	withExpiryCoinselect bool, receivers []Receiver,
 ) (string, error) {
 	if len(receivers) <= 0 {
 		return "", fmt.Errorf("missing receivers")
@@ -915,7 +913,7 @@ func (a *covenantlessArkClient) SendAsync(
 
 	vtxos := make([]client.DescriptorVtxo, 0)
 
-	spendableVtxos, err := a.getVtxos(ctx, opts)
+	spendableVtxos, err := a.getVtxos(ctx, withExpiryCoinselect, nil)
 	if err != nil {
 		return "", err
 	}
@@ -935,8 +933,6 @@ func (a *covenantlessArkClient) SendAsync(
 			}
 		}
 	}
-
-	withExpiryCoinselect := opts != nil && opts.WithExpirySorting
 
 	// do not include boarding utxos
 	_, selectedCoins, changeAmount, err := utils.CoinSelect(
@@ -1197,9 +1193,7 @@ func (a *covenantlessArkClient) sendOnchain(
 }
 
 func (a *covenantlessArkClient) sendOffchain(
-	ctx context.Context,
-	receivers []Receiver,
-	opts *CoinSelectOptions,
+	ctx context.Context, withExpiryCoinselect bool, receivers []Receiver,
 ) (string, error) {
 	if a.wallet.IsLocked() {
 		return "", fmt.Errorf("wallet is locked")
@@ -1243,7 +1237,7 @@ func (a *covenantlessArkClient) sendOffchain(
 
 	vtxos := make([]client.DescriptorVtxo, 0)
 
-	spendableVtxos, err := a.getVtxos(ctx, opts)
+	spendableVtxos, err := a.getVtxos(ctx, withExpiryCoinselect, nil)
 	if err != nil {
 		return "", err
 	}
@@ -1264,12 +1258,10 @@ func (a *covenantlessArkClient) sendOffchain(
 		}
 	}
 
-	boardingUtxos, err := a.getClaimableBoardingUtxos(ctx, opts)
+	boardingUtxos, err := a.getClaimableBoardingUtxos(ctx, nil)
 	if err != nil {
 		return "", err
 	}
-
-	withExpiryCoinselect := opts != nil && opts.WithExpirySorting
 
 	var selectedBoardingCoins []types.Utxo
 	var selectedCoins []client.DescriptorVtxo
@@ -2131,7 +2123,7 @@ func (a *covenantlessArkClient) getOffchainBalance(
 ) (uint64, map[int64]uint64, error) {
 	amountByExpiration := make(map[int64]uint64, 0)
 
-	vtxos, err := a.getVtxos(ctx, &CoinSelectOptions{WithExpirySorting: computeVtxoExpiration})
+	vtxos, err := a.getVtxos(ctx, computeVtxoExpiration, nil)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -2260,7 +2252,10 @@ func (a *covenantlessArkClient) getClaimableBoardingUtxos(ctx context.Context, o
 	return claimable, nil
 }
 
-func (a *covenantlessArkClient) getVtxos(ctx context.Context, opts *CoinSelectOptions) ([]client.Vtxo, error) {
+func (a *covenantlessArkClient) getVtxos(
+	ctx context.Context,
+	withExpiryCoinselect bool, opts *CoinSelectOptions,
+) ([]client.Vtxo, error) {
 	spendableVtxos, _, err := a.ListVtxos(ctx)
 	if err != nil {
 		return nil, err
@@ -2270,7 +2265,7 @@ func (a *covenantlessArkClient) getVtxos(ctx context.Context, opts *CoinSelectOp
 		spendableVtxos = filterByOutpoints(spendableVtxos, opts.OutpointsFilter)
 	}
 
-	if opts == nil || !opts.WithExpirySorting {
+	if !withExpiryCoinselect {
 		return spendableVtxos, nil
 	}
 
