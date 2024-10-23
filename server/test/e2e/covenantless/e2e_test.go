@@ -77,7 +77,7 @@ func TestSendOffchain(t *testing.T) {
 
 	time.Sleep(5 * time.Second)
 
-	_, err = runClarkCommand("claim", "--password", utils.Password)
+	_, err = runClarkCommand("settle", "--password", utils.Password)
 	require.NoError(t, err)
 
 	time.Sleep(3 * time.Second)
@@ -91,7 +91,7 @@ func TestSendOffchain(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(balanceStr), &balance))
 	require.NotZero(t, balance.Offchain.Total)
 
-	_, err = runClarkCommand("claim", "--password", utils.Password)
+	_, err = runClarkCommand("settle", "--password", utils.Password)
 	require.NoError(t, err)
 
 	balanceStr, err = runClarkCommand("balance")
@@ -113,7 +113,7 @@ func TestUnilateralExit(t *testing.T) {
 
 	time.Sleep(5 * time.Second)
 
-	_, err = runClarkCommand("claim", "--password", utils.Password)
+	_, err = runClarkCommand("settle", "--password", utils.Password)
 	require.NoError(t, err)
 
 	time.Sleep(3 * time.Second)
@@ -290,7 +290,7 @@ func TestChainAsyncPayments(t *testing.T) {
 
 	time.Sleep(5 * time.Second)
 
-	_, err = runClarkCommand("claim", "--password", utils.Password)
+	_, err = runClarkCommand("settle", "--password", utils.Password)
 	require.NoError(t, err)
 
 	time.Sleep(3 * time.Second)
@@ -391,7 +391,7 @@ func TestSweep(t *testing.T) {
 
 	time.Sleep(5 * time.Second)
 
-	_, err = runClarkCommand("claim", "--password", utils.Password)
+	_, err = runClarkCommand("settle", "--password", utils.Password)
 	require.NoError(t, err)
 
 	time.Sleep(3 * time.Second)
