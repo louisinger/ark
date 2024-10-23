@@ -330,6 +330,35 @@ func (a *covenantlessArkClient) processTransactionEvent(
 	event client.TransactionEvent,
 ) {
 	if event.Round != nil {
+		allTxs, err := a.store.TransactionStore().GetAllTransactions(context.Background())
+		if err != nil {
+			log.WithError(err).Error("Failed to get all transactions")
+			return
+		}
+		pendingBoardingTxs := make(map[string]types.Transaction)
+		for _, tx := range allTxs {
+			if tx.BoardingTxid != "" && !tx.Settled {
+				pendingBoardingTxs[tx.BoardingTxid] = tx
+			}
+		}
+		var ignoreNewTxs bool
+		settledBoardingTxs := make([]types.Transaction, 0, len(event.Round.ClaimedBoardingUtxos))
+		for _, u := range event.Round.ClaimedBoardingUtxos {
+			if tx, ok := pendingBoardingTxs[u.Txid]; ok {
+				ignoreNewTxs = true
+				tx.Settled = true
+				settledBoardingTxs = append(settledBoardingTxs, tx)
+			}
+		}
+
+		if len(settledBoardingTxs) > 0 {
+			if err := a.store.TransactionStore().
+				UpdateTransactions(context.Background(), settledBoardingTxs); err != nil {
+				log.WithError(err).Error("Failed to settle boarding transactions")
+				return
+			}
+		}
+
 		spentKeys := make([]types.VtxoKey, 0, len(event.Round.SpentVtxos))
 		for _, v := range event.Round.SpentVtxos {
 			spentKeys = append(spentKeys, types.VtxoKey{
@@ -376,29 +405,34 @@ func (a *covenantlessArkClient) processTransactionEvent(
 					Spent:     false,
 				})
 
-				txsToInsert = append(txsToInsert, types.Transaction{
-					TransactionKey: types.TransactionKey{
-						RoundTxid: event.Round.Txid,
-					},
-					Amount:    v.Amount,
-					Type:      types.TxReceived,
-					CreatedAt: time.Now(), //TODO is this ok?
-				})
+				if !ignoreNewTxs {
+					txsToInsert = append(txsToInsert, types.Transaction{
+						TransactionKey: types.TransactionKey{
+							RoundTxid: event.Round.Txid,
+						},
+						Amount:    v.Amount,
+						Type:      types.TxReceived,
+						CreatedAt: time.Now(), //TODO is this ok?
+					})
+				}
 			}
 		}
 
-		if err := a.store.VtxoStore().
-			AddVtxos(context.Background(), vtxosToInsert); err != nil {
-			log.WithError(err).Error("Failed to insert new vtxos")
-			return
+		if len(vtxosToInsert) > 0 {
+			if err := a.store.VtxoStore().
+				AddVtxos(context.Background(), vtxosToInsert); err != nil {
+				log.WithError(err).Error("Failed to insert new vtxos")
+				return
+			}
 		}
 
-		if err := a.store.TransactionStore().
-			AddTransactions(context.Background(), txsToInsert); err != nil {
-			log.WithError(err).Error("Failed to insert received transaction")
-			return
+		if len(txsToInsert) > 0 {
+			if err := a.store.TransactionStore().
+				AddTransactions(context.Background(), txsToInsert); err != nil {
+				log.WithError(err).Error("Failed to insert received transaction")
+				return
+			}
 		}
-
 	}
 
 	if event.Redeem != nil {
