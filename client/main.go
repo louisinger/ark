@@ -161,7 +161,7 @@ var (
 		},
 	}
 	settleCmd = cli.Command{
-		Name:  "settled",
+		Name:  "settle",
 		Usage: "Settle onboarding funds or oor payments",
 		Action: func(ctx *cli.Context) error {
 			return settle(ctx)
