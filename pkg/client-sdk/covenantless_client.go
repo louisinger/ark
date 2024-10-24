@@ -719,7 +719,7 @@ func (a *covenantlessArkClient) UnilateralRedeem(ctx context.Context) error {
 		return fmt.Errorf("wallet is locked")
 	}
 
-	vtxos, err := a.getVtxos(ctx, false, nil)
+	vtxos, err := a.getVtxos(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -799,7 +799,7 @@ func (a *covenantlessArkClient) CollaborativeRedeem(
 	}
 
 	vtxos := make([]client.DescriptorVtxo, 0)
-	spendableVtxos, err := a.getVtxos(ctx, false, nil)
+	spendableVtxos, err := a.getVtxos(ctx, nil)
 	if err != nil {
 		return "", err
 	}
@@ -946,8 +946,10 @@ func (a *covenantlessArkClient) SendAsync(
 	}
 
 	vtxos := make([]client.DescriptorVtxo, 0)
-
-	spendableVtxos, err := a.getVtxos(ctx, withExpiryCoinselect, nil)
+	opts := &CoinSelectOptions{
+		WithExpirySorting: withExpiryCoinselect,
+	}
+	spendableVtxos, err := a.getVtxos(ctx, opts)
 	if err != nil {
 		return "", err
 	}
@@ -1270,8 +1272,9 @@ func (a *covenantlessArkClient) sendOffchain(
 	}
 
 	vtxos := make([]client.DescriptorVtxo, 0)
-
-	spendableVtxos, err := a.getVtxos(ctx, withExpiryCoinselect, nil)
+	opts := &CoinSelectOptions{
+		WithExpirySorting: withExpiryCoinselect}
+	spendableVtxos, err := a.getVtxos(ctx, opts)
 	if err != nil {
 		return "", err
 	}
@@ -2156,8 +2159,10 @@ func (a *covenantlessArkClient) getOffchainBalance(
 	ctx context.Context, computeVtxoExpiration bool,
 ) (uint64, map[int64]uint64, error) {
 	amountByExpiration := make(map[int64]uint64, 0)
-
-	vtxos, err := a.getVtxos(ctx, computeVtxoExpiration, nil)
+	opts := &CoinSelectOptions{
+		WithExpirySorting: computeVtxoExpiration,
+	}
+	vtxos, err := a.getVtxos(ctx, opts)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -2287,8 +2292,7 @@ func (a *covenantlessArkClient) getClaimableBoardingUtxos(ctx context.Context, o
 }
 
 func (a *covenantlessArkClient) getVtxos(
-	ctx context.Context,
-	withExpiryCoinselect bool, opts *CoinSelectOptions,
+	ctx context.Context, opts *CoinSelectOptions,
 ) ([]client.Vtxo, error) {
 	spendableVtxos, _, err := a.ListVtxos(ctx)
 	if err != nil {
@@ -2299,7 +2303,7 @@ func (a *covenantlessArkClient) getVtxos(
 		spendableVtxos = filterByOutpoints(spendableVtxos, opts.OutpointsFilter)
 	}
 
-	if !withExpiryCoinselect {
+	if opts == nil || !opts.WithExpirySorting {
 		return spendableVtxos, nil
 	}
 
