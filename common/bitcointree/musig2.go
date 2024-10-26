@@ -34,12 +34,15 @@ func (n *Musig2Nonce) Encode(w io.Writer) error {
 
 func (n *Musig2Nonce) Decode(r io.Reader) error {
 	bytes := make([]byte, 66)
-	_, err := r.Read(bytes)
+	bytesRead, err := io.ReadFull(r, bytes)
 	if err != nil {
 		return err
 	}
+	if bytesRead != 66 {
+		return fmt.Errorf("expected to read 66 bytes, but read %d", bytesRead)
+	}
 
-	n.PubNonce = [66]byte(bytes)
+	copy(n.PubNonce[:], bytes)
 	return nil
 }
 
