@@ -40,7 +40,7 @@ func (m *paymentsMap) len() int64 {
 
 	count := int64(0)
 	for _, p := range m.payments {
-		if len(p.Receivers) > 0 {
+		if len(p.Receivers) > 0 && !p.pingTimestamp.IsZero() && time.Since(p.pingTimestamp).Minutes() <= 1 {
 			count++
 		}
 	}
@@ -122,6 +122,7 @@ func (m *paymentsMap) pop(num int64) ([]domain.Payment, []ports.BoardingInput, m
 			continue
 		}
 		// Skip payments for which users didn't notify to be online in the last minute.
+		// TODO remove the payment from the map ?
 		if p.pingTimestamp.IsZero() || time.Since(p.pingTimestamp).Minutes() > 1 {
 			continue
 		}
@@ -370,4 +371,30 @@ func getSpentVtxos(payments map[string]domain.Payment) []domain.VtxoKey {
 		}
 	}
 	return vtxos
+}
+
+func (m *paymentsMap) waitForPayments(ctx context.Context) error {
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			m.lock.RLock()
+			hasPayments := false
+			for _, p := range m.payments {
+				if len(p.Receivers) > 0 && !p.pingTimestamp.IsZero() && time.Since(p.pingTimestamp).Minutes() <= 1 {
+					hasPayments = true
+					break
+				}
+			}
+			m.lock.RUnlock()
+
+			if hasPayments {
+				return nil
+			}
+		}
+	}
 }

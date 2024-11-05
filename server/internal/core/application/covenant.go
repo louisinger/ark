@@ -370,6 +370,10 @@ func (s *covenantService) GetRoundByTxid(ctx context.Context, poolTxid string) (
 }
 
 func (s *covenantService) GetCurrentRound(ctx context.Context) (*domain.Round, error) {
+	if s.currentRound == nil {
+		return nil, fmt.Errorf("no current round")
+	}
+
 	return domain.NewRoundFromEvents(s.currentRound.Events()), nil
 }
 
@@ -432,22 +436,28 @@ func (s *covenantService) start() {
 }
 
 func (s *covenantService) startRound() {
-	dustAmount, err := s.wallet.GetDustAmount(context.Background())
+	defer s.startFinalization()
+	ctx := context.Background()
+
+	dustAmount, err := s.wallet.GetDustAmount(ctx)
 	if err != nil {
-		log.WithError(err).Warn("failed to retrieve dust amount")
+		log.WithError(err).Warn("failed to get dust amount")
 		return
 	}
+
 	round := domain.NewRound(dustAmount)
-	//nolint:all
-	round.StartRegistration()
+	if _, err := round.StartRegistration(); err != nil {
+		log.WithError(err).Warn("failed to start registration")
+		return
+	}
+
 	s.currentRound = round
 
-	defer func() {
-		time.Sleep(time.Duration(s.roundInterval/2) * time.Second)
-		s.startFinalization()
-	}()
-
-	log.Debugf("started registration stage for new round: %s", round.Id)
+	log.Debugf("waiting for at least one payment to be registered...")
+	if err := s.paymentRequests.waitForPayments(ctx); err != nil {
+		log.WithError(err).Warn("failed to wait for payments")
+		return
+	}
 }
 
 func (s *covenantService) startFinalization() {
@@ -469,7 +479,7 @@ func (s *covenantService) startFinalization() {
 			s.startRound()
 			return
 		}
-		time.Sleep(time.Duration((s.roundInterval/2)-1) * time.Second)
+		time.Sleep(time.Duration(s.roundInterval) * time.Second)
 		s.finalizeRound()
 	}()
 

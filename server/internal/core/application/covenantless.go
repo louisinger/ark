@@ -600,6 +600,11 @@ func (s *covenantlessService) GetRoundById(ctx context.Context, id string) (*dom
 }
 
 func (s *covenantlessService) GetCurrentRound(ctx context.Context) (*domain.Round, error) {
+	// prevent nil pointer dereference in case something went wrong
+	if s.currentRound == nil {
+		return nil, fmt.Errorf("no current round")
+	}
+
 	return domain.NewRoundFromEvents(s.currentRound.Events()), nil
 }
 
@@ -715,31 +720,36 @@ func (s *covenantlessService) start() {
 }
 
 func (s *covenantlessService) startRound() {
-	dustAmount, err := s.wallet.GetDustAmount(context.Background())
+	defer s.startFinalization()
+	ctx := context.Background()
+
+	dustAmount, err := s.wallet.GetDustAmount(ctx)
 	if err != nil {
 		log.WithError(err).Warn("failed to get dust amount")
 		return
 	}
 
 	round := domain.NewRound(dustAmount)
-	//nolint:all
-	round.StartRegistration()
+	if _, err := round.StartRegistration(); err != nil {
+		log.WithError(err).Warn("failed to start registration")
+		return
+	}
+
 	s.currentRound = round
 
-	defer func() {
-		time.Sleep(time.Duration(s.roundInterval/2) * time.Second)
-		s.startFinalization()
-	}()
-
-	log.Debugf("started registration stage for new round: %s", round.Id)
+	log.Debugf("waiting for at least one payment to be registered...")
+	if err := s.paymentRequests.waitForPayments(ctx); err != nil {
+		log.WithError(err).Warn("failed to wait for payments")
+		return
+	}
 }
 
 func (s *covenantlessService) startFinalization() {
 	ctx := context.Background()
 	round := s.currentRound
 
-	roundRemainingDuration := time.Duration(s.roundInterval/2-1) * time.Second
-	thirdOfRemainingDuration := time.Duration(roundRemainingDuration / 3)
+	roundDuration := time.Duration(s.roundInterval) * time.Second
+	thirdOfRemainingDuration := time.Duration(roundDuration / 3)
 
 	var roundAborted bool
 	defer func() {
@@ -757,6 +767,7 @@ func (s *covenantlessService) startFinalization() {
 			s.startRound()
 			return
 		}
+		// give time to users to sign the forfeits
 		time.Sleep(thirdOfRemainingDuration)
 		s.finalizeRound()
 	}()
