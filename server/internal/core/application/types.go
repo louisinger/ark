@@ -32,7 +32,7 @@ type Service interface {
 	GetCurrentRound(ctx context.Context) (*domain.Round, error)
 	GetEventsChannel(ctx context.Context) <-chan domain.RoundEvent
 	UpdatePaymentStatus(
-		ctx context.Context, paymentId string,
+		ctx context.Context, paymentId string, readOnly bool,
 	) (lastEvent domain.RoundEvent, err error)
 	ListVtxos(
 		ctx context.Context, address string,

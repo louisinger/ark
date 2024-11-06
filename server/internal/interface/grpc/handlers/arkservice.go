@@ -283,7 +283,7 @@ func (h *handler) Ping(
 		return nil, status.Error(codes.InvalidArgument, "missing payment id")
 	}
 
-	lastEvent, err := h.svc.UpdatePaymentStatus(ctx, req.GetPaymentId())
+	lastEvent, err := h.svc.UpdatePaymentStatus(ctx, req.GetPaymentId(), req.GetReadOnly())
 	if err != nil {
 		return nil, err
 	}

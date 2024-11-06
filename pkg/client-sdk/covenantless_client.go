@@ -1691,7 +1691,7 @@ func (a *covenantlessArkClient) handleRoundStream(
 				if step != roundFinalization {
 					continue
 				}
-				res, err := a.client.Ping(ctx, paymentID)
+				res, err := a.client.Ping(ctx, paymentID, false)
 				if err != nil {
 					return "", err
 				}

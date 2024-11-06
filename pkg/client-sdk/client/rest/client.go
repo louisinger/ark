@@ -254,7 +254,7 @@ func (a *restClient) GetEventStream(
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				event, err := a.Ping(ctx, payID)
+				event, err := a.Ping(ctx, payID, true)
 				if err != nil {
 					eventsCh <- client.RoundEventChannel{
 						Err: err,
@@ -275,10 +275,11 @@ func (a *restClient) GetEventStream(
 }
 
 func (a *restClient) Ping(
-	ctx context.Context, paymentID string,
+	ctx context.Context, paymentID string, readOnly bool,
 ) (client.RoundEvent, error) {
 	r := ark_service.NewArkServicePingParams()
 	r.SetPaymentID(paymentID)
+	r.SetReadOnly(&readOnly)
 	resp, err := a.svc.ArkServicePing(r)
 	if err != nil {
 		return nil, err

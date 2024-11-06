@@ -191,6 +191,7 @@ message GetEventStreamResponse {
 
 message PingRequest {
   string payment_id = 1;
+  bool read_only = 2; // If true, the ASP will not update the payment ping timestamp.
 }
 message PingResponse {
   oneof event {

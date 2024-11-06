@@ -218,6 +218,13 @@
             "in": "path",
             "required": true,
             "type": "string"
+          },
+          {
+            "name": "readOnly",
+            "description": "If true, the ASP will not update the payment ping timestamp.",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
           }
         ],
         "tags": [

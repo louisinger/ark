@@ -319,7 +319,11 @@ func (s *covenantService) ClaimVtxos(ctx context.Context, creds string, receiver
 	return s.paymentRequests.update(*payment)
 }
 
-func (s *covenantService) UpdatePaymentStatus(_ context.Context, id string) (domain.RoundEvent, error) {
+func (s *covenantService) UpdatePaymentStatus(_ context.Context, id string, readOnly bool) (domain.RoundEvent, error) {
+	if readOnly {
+		return s.lastEvent, nil
+	}
+
 	err := s.paymentRequests.updatePingTimestamp(id)
 	if err != nil {
 		if _, ok := err.(errPaymentNotFound); ok {

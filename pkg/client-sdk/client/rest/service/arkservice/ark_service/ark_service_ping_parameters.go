@@ -14,6 +14,7 @@ import (
 	"github.com/go-openapi/runtime"
 	cr "github.com/go-openapi/runtime/client"
 	"github.com/go-openapi/strfmt"
+	"github.com/go-openapi/swag"
 )
 
 // NewArkServicePingParams creates a new ArkServicePingParams object,
@@ -63,6 +64,12 @@ type ArkServicePingParams struct {
 
 	// PaymentID.
 	PaymentID string
+
+	/* ReadOnly.
+
+	   If true, the ASP will not update the payment ping timestamp.
+	*/
+	ReadOnly *bool
 
 	timeout    time.Duration
 	Context    context.Context
@@ -128,6 +135,17 @@ func (o *ArkServicePingParams) SetPaymentID(paymentID string) {
 	o.PaymentID = paymentID
 }
 
+// WithReadOnly adds the readOnly to the ark service ping params
+func (o *ArkServicePingParams) WithReadOnly(readOnly *bool) *ArkServicePingParams {
+	o.SetReadOnly(readOnly)
+	return o
+}
+
+// SetReadOnly adds the readOnly to the ark service ping params
+func (o *ArkServicePingParams) SetReadOnly(readOnly *bool) {
+	o.ReadOnly = readOnly
+}
+
 // WriteToRequest writes these params to a swagger request
 func (o *ArkServicePingParams) WriteToRequest(r runtime.ClientRequest, reg strfmt.Registry) error {
 
@@ -139,6 +157,23 @@ func (o *ArkServicePingParams) WriteToRequest(r runtime.ClientRequest, reg strfm
 	// path param paymentId
 	if err := r.SetPathParam("paymentId", o.PaymentID); err != nil {
 		return err
+	}
+
+	if o.ReadOnly != nil {
+
+		// query param readOnly
+		var qrReadOnly bool
+
+		if o.ReadOnly != nil {
+			qrReadOnly = *o.ReadOnly
+		}
+		qReadOnly := swag.FormatBool(qrReadOnly)
+		if qReadOnly != "" {
+
+			if err := r.SetQueryParam("readOnly", qReadOnly); err != nil {
+				return err
+			}
+		}
 	}
 
 	if len(res) > 0 {
