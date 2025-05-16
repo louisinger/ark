@@ -11,20 +11,6 @@ import (
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
-var TreeTxSize = (&input.TxWeightEstimator{}).
-	AddTaprootKeySpendInput(txscript.SigHashDefault). // parent
-	AddP2TROutput().                                  // left child
-	AddP2TROutput().                                  // right child
-	VSize()
-
-var ConnectorTxSize = (&input.TxWeightEstimator{}).
-	AddTaprootKeySpendInput(txscript.SigHashDefault).
-	AddP2TROutput().
-	AddP2TROutput().
-	AddP2TROutput().
-	AddP2TROutput().
-	VSize()
-
 func ComputeForfeitTxFee(
 	feeRate chainfee.SatPerKVByte,
 	tapscript *waddrmgr.Tapscript,

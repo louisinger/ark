@@ -307,13 +307,14 @@ func dumpPrivKey(ctx *cli.Context) error {
 }
 
 func receive(ctx *cli.Context) error {
-	offchainAddr, boardingAddr, err := arkSdkClient.Receive(ctx.Context)
+	onchainAddr, offchainAddr, boardingAddr, err := arkSdkClient.Receive(ctx.Context)
 	if err != nil {
 		return err
 	}
 	return printJSON(map[string]interface{}{
 		"boarding_address": boardingAddr,
 		"offchain_address": offchainAddr,
+		"onchain_address":  onchainAddr,
 	})
 }
 

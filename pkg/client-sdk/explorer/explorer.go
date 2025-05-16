@@ -28,7 +28,7 @@ type Explorer interface {
 	GetTxs(addr string) ([]tx, error)
 	IsRBFTx(txid, txHex string) (bool, string, int64, error)
 	GetTxOutspends(tx string) ([]spentStatus, error)
-	GetUtxos(addr string) ([]utxo, error)
+	GetUtxos(addr string) ([]Utxo, error)
 	GetBalance(addr string) (uint64, error)
 	GetRedeemedVtxosBalance(
 		addr string, unilateralExitDelay common.RelativeLocktime,
@@ -207,7 +207,7 @@ func (e *explorerSvc) GetTxOutspends(txid string) ([]spentStatus, error) {
 	return spentStatuses, nil
 }
 
-func (e *explorerSvc) GetUtxos(addr string) ([]utxo, error) {
+func (e *explorerSvc) GetUtxos(addr string) ([]Utxo, error) {
 	resp, err := http.Get(fmt.Sprintf("%s/address/%s/utxo", e.baseUrl, addr))
 	if err != nil {
 		return nil, err
@@ -222,7 +222,7 @@ func (e *explorerSvc) GetUtxos(addr string) ([]utxo, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("failed to get utxos: %s", string(body))
 	}
-	payload := []utxo{}
+	payload := []Utxo{}
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil, err
 	}
@@ -448,7 +448,7 @@ func parseBitcoinTx(txStr string) (string, string, error) {
 	return txhex, txid, nil
 }
 
-func newUtxo(explorerUtxo utxo, delay common.RelativeLocktime, tapscripts []string) types.Utxo {
+func newUtxo(explorerUtxo Utxo, delay common.RelativeLocktime, tapscripts []string) types.Utxo {
 	utxoTime := explorerUtxo.Status.Blocktime
 	createdAt := time.Unix(utxoTime, 0)
 	if utxoTime == 0 {
