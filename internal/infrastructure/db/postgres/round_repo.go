@@ -165,6 +165,7 @@ func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Rou
 
 		if len(round.Intents) > 0 {
 			for _, intent := range round.Intents {
+				fmt.Println("PORCA MADONNNA", intent.Txid)
 				if err := querierWithTx.UpsertIntent(
 					ctx,
 					queries.UpsertIntentParams{
@@ -494,6 +495,7 @@ func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
 					Message:   v.intent.Message.String,
 					Inputs:    make([]domain.Vtxo, 0),
 					Receivers: make([]domain.Receiver, 0),
+					Txid:      v.intent.Txid.String,
 				}
 				round.Intents[v.intent.ID.String] = intent
 			}
@@ -507,6 +509,7 @@ func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
 						Message:   v.vtxo.Message.String,
 						Inputs:    make([]domain.Vtxo, 0),
 						Receivers: make([]domain.Receiver, 0),
+						Txid:      v.vtxo.IntentTxid.String,
 					}
 				}
 
@@ -534,6 +537,7 @@ func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
 						Message:   v.receiver.Message.String,
 						Inputs:    make([]domain.Vtxo, 0),
 						Receivers: make([]domain.Receiver, 0),
+						Txid:      v.receiver.Txid.String,
 					}
 				}
 
