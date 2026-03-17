@@ -24,6 +24,8 @@ type OffchainTxAccepted struct {
 	FinalArkTx          string
 	SignedCheckpointTxs map[string]string
 	ExpiryTimestamp     int64
+	// NewDepth
+	// Markers
 }
 
 type OffchainTxFinalized struct {
