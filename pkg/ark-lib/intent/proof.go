@@ -12,6 +12,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
@@ -165,19 +166,39 @@ func New(message string, inputs []Input, outputs []*wire.TxOut) (*Proof, error) 
 	return &Proof{Packet: *toSign}, nil
 }
 
-// Fees returns the implicit fee of the proof transaction (sum of inputs minus sum of outputs).
-func (p Proof) Fees() (int64, error) {
-	sumOfInputs := int64(0)
+func (p Proof) ValidateAmounts() error {
 	for i, input := range p.Inputs {
 		if input.WitnessUtxo == nil {
-			return 0, fmt.Errorf("missing witness utxo for input %d", i)
+			return fmt.Errorf("missing witness utxo for input %d", i)
 		}
-		sumOfInputs += int64(input.WitnessUtxo.Value)
+		if v := input.WitnessUtxo.Value; v < 0 || v > btcutil.MaxSatoshi {
+			return fmt.Errorf("invalid amount for input %d: %d", i, v)
+		}
+	}
+
+	for i, output := range p.UnsignedTx.TxOut {
+		if v := output.Value; v < 0 || v > btcutil.MaxSatoshi {
+			return fmt.Errorf("invalid amount for output %d: %d", i, v)
+		}
+	}
+
+	return nil
+}
+
+// Fees returns the implicit fee of the proof transaction (sum of inputs minus sum of outputs).
+func (p Proof) Fees() (int64, error) {
+	if err := p.ValidateAmounts(); err != nil {
+		return 0, err
+	}
+
+	sumOfInputs := int64(0)
+	for _, input := range p.Inputs {
+		sumOfInputs += input.WitnessUtxo.Value
 	}
 
 	sumOfOutputs := int64(0)
 	for _, output := range p.UnsignedTx.TxOut {
-		sumOfOutputs += int64(output.Value)
+		sumOfOutputs += output.Value
 	}
 
 	fees := sumOfInputs - sumOfOutputs

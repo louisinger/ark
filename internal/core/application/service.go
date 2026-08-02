@@ -1512,6 +1512,11 @@ func (s *service) RegisterIntent(
 			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
 	}
 
+	if err := proof.ValidateAmounts(); err != nil {
+		return "", errors.INVALID_INTENT_PSBT.New("%s", err).
+			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
+	}
+
 	now := time.Now()
 	if message.ValidAt > 0 {
 		validAt := time.Unix(message.ValidAt, 0)
@@ -2357,6 +2362,11 @@ func (s *service) EstimateIntentFee(
 	outpoints := proof.GetOutpoints()
 	if len(outpoints) == 0 {
 		return 0, errors.INVALID_INTENT_PSBT.New("proof misses inputs").
+			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
+	}
+
+	if err := proof.ValidateAmounts(); err != nil {
+		return 0, errors.INVALID_INTENT_PSBT.New("%s", err).
 			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
 	}
 
